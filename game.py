@@ -201,9 +201,6 @@ class Game:
 
             player_idx = (player_idx + 1) % len(self.players)
 
-
-
-
     def play_round(self):
         phase = self.states[self.state_idx]
         
