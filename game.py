@@ -2,7 +2,7 @@ import random
 from player import Player
 from card import Card
 from itertools import combinations
-from evaluator import get_best_hand, evaluate_hand_strength
+from evaluator import get_best_hand
 """
 Notes:
 cc = community cards
