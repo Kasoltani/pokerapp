@@ -1,18 +1,39 @@
 import random
 from player import Player
+from card import Card
+from itertools import combinations
+from evaluator import get_best_hand, evaluate_hand_strength
 """
-
+Notes:
 cc = community cards
 
+To-do:
 do we need card class?
+all-in logic
+show hand to player
+hand comparison find winner
+choose to show hand
+web-app integration
+-> account - db - player creation
+    -> two tables, user auth, players table
+->routes for login logout playing
+->buy domain
+->host on some service
+
+
+table logic
+-> stand sit at table
+-> join table with x chips
+-> 7-2 logic
+-> adding removing chips
+
 """
 
-player_names = ['Raj', 'Jay', 'Kasra', 'Scott', 'Ethan']
 
 class Game:
 
     def __init__(self, players):
-        self.players = [Player(name) for name in player_names]
+        self.players = [Player(name) for name in players]
         self.deck = self.create_deck()
         self.cc = []
         self.states = ['pf', 'f', 't', 'r', 's']
@@ -21,10 +42,9 @@ class Game:
         self.pot = 0
 
     def create_deck(self):
-        suits = ["diamonds", "hearts", "spades", "clubs"]
-        rank = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "Jack", "Queen", "King", "Ace"]
-
-        deck = [f"{r} of {s}" for s in suits for r in rank] 
+        suits = ["H", "D", "C", "S"]
+        ranks = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"]
+        deck = [Card(rank, suit) for suit in suits for rank in ranks] 
         random.shuffle(deck)
 
         return deck
@@ -33,7 +53,7 @@ class Game:
         self.dealer_idx = (self.dealer_idx + 1) % len(self.players)
         self.sb_idx = (self.dealer_idx + 1) % len(self.players)
         self.bb_idx = (self.dealer_idx + 2) % len(self.players)
-        pass
+        
 
     def deal_cards(self):
         for _ in range(2):
@@ -55,21 +75,22 @@ class Game:
         current_bet = 0
         betting_done = False
         last_raiser_idx = fta
-        to_call = 0
         is_fta = True
+        acted_players = set()
 
 
         while not betting_done:
+            # edge if only one player remains
+            not_folded = [player for player in self.players if not player.folded]
+            if len(not_folded) == 1:
+                print(f"{not_folded[0].name} wins pot uncontested")
+                not_folded[0].chips += self.pot
+                self.pot = 0
+                return
+            
             print(f"Current Pot: {self.pot}")
             player = self.players[player_idx]
-
-            if player_idx == last_raiser_idx:
-                if is_fta:
-                    is_fta = False
-                else:    
-                    betting_done = True
-                    continue
-
+            print(player)
 
             if player.folded or player.chips == 0:
                 player_idx = (player_idx + 1) % len(self.players)
@@ -77,22 +98,31 @@ class Game:
 
             to_call = current_bet - player.current_bet
             print(f"{player.name}'s turn\n")
-            print(f"Chips: {player.chips}, Current Bet: {player.current_bet}")
-            print(f"Call: {current_bet - player.current_bet}")
+            print(f"Chips: {player.chips}, Current Bet: {player.current_bet}\n")
+            print(f"Call: {current_bet - player.current_bet}\n")
             
 
             # show player options
             if to_call > 0:
-                action = input(f"Hey {player.name}, choose (fold, call, raise, all in):").strip().lower()
+                valid_actions = ["fold", "call", "raise", "all-in"]
             else:
-                action = input(f"choose action (check, bet, all in)").strip().lower()
+                valid_actions = ["fold", "check", "bet", "all-in"]
+            
+            action = input(f"{player.name}, choose action({','.join(valid_actions)}):").strip().lower()
+
+            if action not in valid_actions:
+                print("You didnt choose an action available")
+                continue
 
             if action == "fold":
                 player.folded = True
-                print(f"{player.name} folded like a lil bish")
+                print(f"{player.name} folded")
 
-            elif action == "check" and to_call == 0:
-                print(f"{player.name} checked")
+            elif action == "check":
+                if to_call > 0:
+                    print("Can't check there is a bet")
+                    continue
+                print(f"{player.name} checks")
 
             elif action == "call" and to_call > 0:
                 if player.chips >= to_call:
@@ -106,44 +136,46 @@ class Game:
                     self.pot += player.chips
                     player.chips = 0
             
-            elif action == "bet" and to_call == 0:
+            elif action == "bet":
                 # deal with non ints and 
-                valid_bet = False
-                while not valid_bet:
+                while True:
                     try:
-                        amount = abs(int(input("Put in a bet size plz")))
-                        valid_bet = True
-                    except Exception as e:
-                        print(f"you fucking tard you need to put an integer number")
-                if 0 < amount <= player.chips:
-                    player.chips -= amount
-                    player.current_bet = amount
-                    self.pot += amount
-                    current_bet = amount
-                    last_raiser_idx = player_idx
-                    print(f"{player.name} bets {amount}!")
-                else:
-                    print("how did we get this should be impops")
-                
-            elif action == "raise" and to_call > 0:
-                valid_bet = False
-                while not valid_bet:
-                    try:
-                        amount = abs(int(input("Enter Raise Amount")))
-                        valid_bet = True
-                    except Exception as e:
-                        print(f"you fucking tard you need to put an integer number")
+                        amount = int(input("Enter bet amount:"))
+                        if amount <= 0 or amount > player.chips:
+                            raise ValueError
+                        else:
+                            break
+                    except:
+                        print("Invalid bet")
+                        continue
 
-                if amount > current_bet and amount <= player.current_bet + player.chips:
-                    diff = amount - player.current_bet
-                    player.chips -= diff
-                    player.current_bet = amount
-                    self.pot += diff
-                    current_bet = amount
-                    last_raiser_idx = player_idx
-                    print(f"{player.name} raised to {amount}")
-                else:
-                    print("how did you get here")
+                current_bet = amount
+                player.chips -= amount
+                player.current_bet = amount
+                self.pot += amount
+                last_raiser_idx = player_idx
+                print(f"{player.name} bet {amount}")
+                
+            elif action == "raise":
+                while True:
+                    try:
+                        amount = int(input("Enter raise:"))
+                        raise_amount = amount - player.current_bet
+                        if raise_amount <= to_call or amount > player.chips + player.current_bet:
+                            raise ValueError
+                        else:
+                            break
+                    except:
+                        print("Invalid raise")
+                        continue
+
+                diff = amount - player.current_bet
+                player.chips -= diff
+                player.current_bet = amount
+                self.pot += diff
+                current_bet = amount
+                last_raiser_idx = player_idx
+                print(f"{player.name} raised to {amount}")
                 
             elif action == "all-in":
                 amount = player.chips
@@ -157,9 +189,15 @@ class Game:
                     
                 print(f"{player.name} goes all in with {amount}")
             
-            else:
-                print("bad wrong bad boy put action that exist dummy")
-                continue
+            acted_players.add(player_idx)
+
+            if player_idx == last_raiser_idx and not is_fta:
+                break
+
+            if len(acted_players) >= len([player for player in self.players if not player.folded and player.chips > 0]) and current_bet == 0:
+                break
+
+            is_fta = False
 
             player_idx = (player_idx + 1) % len(self.players)
 
@@ -177,21 +215,38 @@ class Game:
         elif phase in ['f', 't', 'r']:
             self.deal_cc()
             fta = (self.dealer_idx + 1) % len(self.players)
-        else:
-            self.showdown()
-            
-        # betting round fucntin
-        if phase != 's':
-            self.betting_round(fta)
+        
+        for player in self.players:
+            player.current_bet = 0
+        self.betting_round(fta)
 
         self.state_idx += 1
 
     def showdown(self):
-        
-        print("End of round")
-        return
+        best_score = -1
+        winners = []
 
-    def start_game(self):
+        for player in self.players:
+            if player.folded:
+                continue
+
+            score, best_hand = get_best_hand(player.hand, self.cc)
+            print(f"{player.name}'s best hand: {best_hand} with score {score}")
+
+            if score > best_score:
+                best_score = score
+                winners = [player]
+            elif score == best_score:
+                winners.append(player)
+            
+        split_pot = self.pot // len(winners)
+        for winner in winners:
+            winner.chips += split_pot
+            print(f"{winner.name} wins {split_pot} chips")
+        self.pot = 0
+        
+
+    def start_hand(self):
         self.deck = self.create_deck()
         self.cc = []
         self.state_idx = 0
@@ -200,7 +255,21 @@ class Game:
         for player in self.players:
             player.reset_hand()
 
-        # self.shift_roles()
         while self.states[self.state_idx] != 's':
             self.play_round()
-        print("Showdown")
+        
+        self.showdown()
+
+    def start_game_loop(self):
+        while True:
+            self.shift_roles()
+            self.start_hand()
+
+            for player in self.players:
+                print(f"{player.name} has {player.chips} chips")
+            
+            cont = input("Next hand y/n:").lower()
+            if cont != 'y':
+                print("GGs")
+                break
+        
