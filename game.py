@@ -2,7 +2,7 @@ import random
 from player import Player
 from card import Card
 from itertools import combinations
-from evaluator import get_best_hand, evaluate_hand_strength
+from eval import get_best_hand
 """
 Notes:
 cc = community cards
@@ -29,11 +29,31 @@ table logic
 
 """
 
+hand_names = {
+    9: "Straight Flush",
+    8: "Four of a kind",
+    7: "Full House",
+    6: "Flush",
+    5: "Straight",
+    4: "Three of a Kind",
+    3: "Two Pair",
+    2: "One Pair",
+    1: "High Card"
+}
+
+def hand_name(key):
+    category = hand_names[key[0]]
+    if key[0] == 9 and key[1] == 14:
+        return "Royal Flush"
+    return category
+
 
 class Game:
 
-    def __init__(self, players):
+    def __init__(self, players, small_blind, big_blind):
         self.players = [Player(name) for name in players]
+        self.small_blind = small_blind
+        self.big_blind = big_blind
         self.deck = self.create_deck()
         self.cc = []
         self.states = ['pf', 'f', 't', 'r', 's']
@@ -69,182 +89,299 @@ class Game:
             self.deck.pop()
             self.cc.append(self.deck.pop())
             print(self.cc)
+
+    def post_blinds(self):
+        sb_player = self.players[self.sb_idx]
+        bb_player = self.players[self.bb_idx]
+
+        for player in self.players:
+            player.current_bet = 0
         
-    def betting_round(self, fta):
+        self.put_in_pot(sb_player, self.small_blind)
+        self.put_in_pot(bb_player, self.big_blind)
+
+    def put_in_pot(self, player, amount):
+        if amount <= 0:
+            return
+        take = min(amount, player.chips)
+        player.chips -= take
+        player.current_bet += take
+        player.committed += take
+        self.pot += take
+    
+    def build_side_pots(self):
+        contrib = {player: player.committed for player in self.players if not player.folded and player.committed > 0}
+        pots = []
+
+        while contrib:
+            contributors = list(contrib.keys())
+            min_amount = min(contrib.values())
+            pot_amount = min_amount * len(contributors)
+            pots.append({"amount": pot_amount, "eligible": contributors[:]})
+
+            new_contrib = {}
+            for player, amount in contrib.items():
+                remaining = amount - min_amount
+                if remaining > 0:
+                    new_contrib[player] = remaining
+            contrib = new_contrib
+
+        return pots
+        
+    def betting_round(self, fta, phase):
+        
         player_idx = fta
-        current_bet = 0
-        betting_done = False
-        last_raiser_idx = fta
-        is_fta = True
-        acted_players = set()
 
+        if phase == 'pf':
+            current_bet = self.big_blind
+            last_raise_size = self.big_blind
+            last_raiser_idx = self.bb_idx
+        else:
+            current_bet = 0
+            last_raise_size = 0
+            last_raiser_idx = None
+        
+        saw_aggression = False
 
-        while not betting_done:
-            # edge if only one player remains
-            not_folded = [player for player in self.players if not player.folded]
-            if len(not_folded) == 1:
-                print(f"{not_folded[0].name} wins pot uncontested")
-                not_folded[0].chips += self.pot
-                self.pot = 0
-                return
+        def next_eligible(i):
+            j = (i + 1) % len(self.players)
+            while self.players[j].folded or self.players[j].chips == 0:
+                j = (j + 1) % len(self.players)
+                if j == i:
+                    break
+            return j
+        
+        while self.players[player_idx].folded or self.players[player_idx].chips == 0:
+            player_idx = next_eligible(player_idx)
+
+        checks_in_row = 0
+
+        while True:
             
-            print(f"Current Pot: {self.pot}")
-            player = self.players[player_idx]
-            print(player)
+            still_in = [player for player in self.players if not player.folded]
 
+            if len(still_in) == 1:
+                w = still_in[0]
+                print(f"{w.name} wins pot")
+                w.chips += self.pot
+                self.pot = 0
+                for player in self.players:
+                    player.committed = 0
+                self.state_idx = len(self.states) - 1
+                return
+
+            player = self.players[player_idx]
             if player.folded or player.chips == 0:
-                player_idx = (player_idx + 1) % len(self.players)
+                player_idx = next_eligible(player_idx)
                 continue
 
             to_call = current_bet - player.current_bet
-            print(f"{player.name}'s turn\n")
-            print(f"Chips: {player.chips}, Current Bet: {player.current_bet}\n")
-            print(f"Call: {current_bet - player.current_bet}\n")
-            
+            print(f"\n Current Pot: {self.pot}")
+            print(player)
+            print(f"{player.name}'s turn")
+            print(f"Chips: {player.chips}, Current bet: {player.current_bet}, Call {to_call}")
 
-            # show player options
             if to_call > 0:
-                valid_actions = ["fold", "call", "raise", "all-in"]
+
+                min_raise = last_raise_size if last_raise_size > 0 else (self.big_blind if phase == "pf" else 1)
+                can_call = player.chips >= to_call
+                can_raise = player.chips >= (to_call + min_raise)
+                if can_call and can_raise:
+                    valid_actions = ["fold", "call", "raise", "all-in"]
+                elif can_call:
+                    valid_actions = ["fold", "call", "all-in"]
+                else:
+                    # short stacked -> probably finna shove lmao
+                    valid_actions = ["fold", "all-in"]
             else:
                 valid_actions = ["fold", "check", "bet", "all-in"]
             
-            action = input(f"{player.name}, choose action({','.join(valid_actions)}):").strip().lower()
+            action = input(f"{player.name}, choose action ({','.join(valid_actions)}) ").strip().lower()
 
             if action not in valid_actions:
-                print("You didnt choose an action available")
+                print("Invalid action, Try again")
                 continue
 
             if action == "fold":
                 player.folded = True
+                checks_in_row = 0
                 print(f"{player.name} folded")
 
             elif action == "check":
                 if to_call > 0:
                     print("Can't check there is a bet")
                     continue
+                checks_in_row += 1
                 print(f"{player.name} checks")
 
-            elif action == "call" and to_call > 0:
-                if player.chips >= to_call:
-                    player.chips -= to_call
-                    player.current_bet += to_call
-                    self.pot += to_call
-                    print(f"{player.name} calls")
-                else:
-                    print(f"{player.name} goes all in with {player.chips} !!")
-                    player.current_bet += player.chips
-                    self.pot += player.chips
-                    player.chips = 0
-            
+            elif action == "call":
+                self.put_in_pot(player, to_call)
+                checks_in_row = 0
+                print(f"{player.name} calls {to_call}")
+
             elif action == "bet":
-                # deal with non ints and 
                 while True:
                     try:
-                        amount = int(input("Enter bet amount:"))
+                        amount = int(input("Enter bet amount: "))
                         if amount <= 0 or amount > player.chips:
-                            raise ValueError
-                        else:
-                            break
+                            print("Invalid bet amount")
+                            continue
+                        break
                     except:
-                        print("Invalid bet")
-                        continue
-
+                        print("Enter a valid number within your stack amount")
+                self.put_in_pot(player, amount)
                 current_bet = amount
-                player.chips -= amount
-                player.current_bet = amount
-                self.pot += amount
+                last_raise_size = amount
                 last_raiser_idx = player_idx
-                print(f"{player.name} bet {amount}")
-                
+                saw_aggression = True
+                checks_in_row = 0
+                print(f"{player.name} bets {amount}")
+
             elif action == "raise":
+                if last_raise_size == 0:
+                    last_raise_size = self.big_blind if phase == 'pf' else (current_bet if current_bet > 0 else 1)
+                
+                min_raise_to = current_bet + last_raise_size
+
                 while True:
                     try:
-                        amount = int(input("Enter raise:"))
-                        raise_amount = amount - player.current_bet
-                        if raise_amount <= to_call or amount > player.chips + player.current_bet:
-                            raise ValueError
-                        else:
-                            break
+                        amount = int(input(f"Enter an amount to raise to: (min raise {min_raise_to}) "))
+                        raise_amount = amount - current_bet
+                        if amount <= current_bet:
+                            print("Raise must exceed current bet")
+                            continue
+                        if raise_amount < last_raise_size:
+                            print(f"Raise must be {last_raise_size} more than current bet")
+                            continue
+                        if amount > player.current_bet + player.chips:
+                            print("You don't have enough chips for that raise")
+                            continue
+                        break
                     except:
-                        print("Invalid raise")
-                        continue
-
-                diff = amount - player.current_bet
-                player.chips -= diff
-                player.current_bet = amount
-                self.pot += diff
-                current_bet = amount
-                last_raiser_idx = player_idx
-                print(f"{player.name} raised to {amount}")
+                        print("Enter a valid number")
                 
+                diff = amount - player.current_bet
+                self.put_in_pot(player, diff)
+                current_bet = amount
+                last_raise_size = raise_amount
+                last_raiser_idx = player_idx
+                saw_aggression = True
+                checks_in_row = 0
+                print(f"{player.name} raises to {amount}")
+
+
             elif action == "all-in":
-                amount = player.chips
-                player.current_bet += amount
-                self.pot += amount
-                player.chips = 0
+                amt = player.chips
+                self.put_in_pot(player, amt)
+                new_bet = player.current_bet
 
-                if player.current_bet > current_bet:
-                    current_bet = player.current_bet
-                    last_raiser_idx = player_idx
-                    
-                print(f"{player.name} goes all in with {amount}")
-            
-            acted_players.add(player_idx)
+                if new_bet > current_bet:
+                    raise_amount = new_bet - current_bet
+                    min_inc = last_raise_size if last_raise_size > 0 else (self.big_blind if phase == 'pf' else 1)
 
-            if player_idx == last_raiser_idx and not is_fta:
-                break
-
-            if len(acted_players) >= len([player for player in self.players if not player.folded and player.chips > 0]) and current_bet == 0:
-                break
-
-            is_fta = False
-
-            player_idx = (player_idx + 1) % len(self.players)
+                    if raise_amount >= min_inc:
+                        # Full all-in raise → reopens action
+                        current_bet = new_bet
+                        last_raise_size = raise_amount
+                        last_raiser_idx = player_idx
+                        saw_aggression = True
+                    else:
+                        # Short all-in raise → price increases, but action does NOT reopen
+                        current_bet = new_bet
+                checks_in_row = 0
+                print(f"{player.name} goes all-in for {amt}")
 
 
+            #ending logic portion
 
+            if current_bet > 0:
+                can_act = any(
+                    (not pl.folded) and (pl.current_bet < current_bet) and (pl.chips > 0)
+                    for pl in self.players
+                )
+                if not can_act:
+                    # pf case
+                    if phase == 'pf' and last_raiser_idx is not None:
+                        nxt = next_eligible(player_idx)
+                        lr = self.players[last_raiser_idx]
+                        if nxt == last_raiser_idx and not lr.folded:
+                            player_idx = last_raiser_idx
+                            continue
+                    break
+
+            if current_bet == 0:
+                eligible_count = sum(1 for p in self.players if (not p.folded) and (p.chips > 0))
+                if eligible_count == 0:
+                    break
+                if checks_in_row >= eligible_count:
+                    break
+
+            # Next player
+            player_idx = next_eligible(player_idx)
 
     def play_round(self):
         phase = self.states[self.state_idx]
-        
         print(f"we are in {phase} of the game")
 
         if phase == 'pf':
             self.deal_cards()
+            self.post_blinds()
             fta = (self.dealer_idx + 3) % len(self.players)
         elif phase in ['f', 't', 'r']:
             self.deal_cc()
             fta = (self.dealer_idx + 1) % len(self.players)
         
         for player in self.players:
-            player.current_bet = 0
-        self.betting_round(fta)
+            if phase != "pf":
+                player.current_bet = 0
 
+        self.betting_round(fta, phase)
         self.state_idx += 1
 
     def showdown(self):
-        best_score = -1
-        winners = []
-
-        for player in self.players:
-            if player.folded:
-                continue
-
-            score, best_hand = get_best_hand(player.hand, self.cc)
-            print(f"{player.name}'s best hand: {best_hand} with score {score}")
-
-            if score > best_score:
-                best_score = score
-                winners = [player]
-            elif score == best_score:
-                winners.append(player)
-            
-        split_pot = self.pot // len(winners)
-        for winner in winners:
-            winner.chips += split_pot
-            print(f"{winner.name} wins {split_pot} chips")
-        self.pot = 0
+        pots = self.build_side_pots()
+        if not pots:
+            print("No chips in pot")
+            return
         
+        best_cache = {}
+        for p in self.players:
+            if p.folded:
+                continue
+            key, best5 = get_best_hand(p.hand, self.cc)
+            best_cache[p] = (key, best5)
+            pretty = " ".join(str(c) for c in best5)
+            print(f"{p.name}'s best hand: {pretty} -> {hand_name(key)} {key}")
+
+        # Award each pot separately
+        for i, pot in enumerate(pots):
+            elig = [p for p in pot["eligible"] if not p.folded]
+            if not elig:
+                continue
+            # Find best among elig
+            best_key = None
+            winners = []
+            for p in elig:
+                key, _ = best_cache[p]
+                if best_key is None or key > best_key:
+                    best_key = key
+                    winners = [p]
+                elif key == best_key:
+                    winners.append(p)
+            # Split amount
+            amount = pot["amount"]
+            share = amount // len(winners)
+            rem = amount % len(winners)
+            for idx, w in enumerate(winners):
+                payout = share + (1 if idx < rem else 0)
+                w.chips += payout
+            names = ", ".join(w.name for w in winners)
+            print(f"Pot {i+1}: {amount} chips -> {names} win(s) {share} each{' +1' if rem else ''}")
+
+        # Clear pot and contributions
+        self.pot = 0
+        for p in self.players:
+            p.committed = 0
 
     def start_hand(self):
         self.deck = self.create_deck()

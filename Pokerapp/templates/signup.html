@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+
+
+{% block content %}
+<link rel="stylesheet" href="static/authstyles.css">
+<div class="wrapper">
+    <div class="title">
+    Sign-Up
+    </div>
+    <form action="{{ url_for('auth.sign_up') }}" method="post">
+    <div class="field">
+        <input type="text" name="email" id="email" required>
+        <label>Email Address</label>
+    </div>
+    <div class="field">
+        <input type="text" name="username" id="username" required>
+        <label>Username</label>
+    </div>
+    <div class="field">
+        <input type="password" name="password" id="username" required>
+        <label>Password</label>
+    </div>
+    <div class="field">
+        <input type="submit" value="submit">
+    </div>
+    <div class="signup-link">
+        Already have an account? <a href="{{ url_for('auth.login') }}">Login now</a>
+    </div>
+    </form>
+</div>
+{% endblock %}

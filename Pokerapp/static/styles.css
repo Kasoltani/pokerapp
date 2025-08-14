@@ -1,0 +1,74 @@
+/* General reset */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: Arial, sans-serif;
+    background-color: #121212;
+    color: #ffffff;
+}
+
+/* Navbar styling */
+.navbar {
+    background-color: #1e1e1e;
+    padding: 1rem 2rem;
+    position: sticky;
+    top: 0;
+    z-index: 1000;
+}
+
+.nav-left {
+    display: flex;
+    gap: 1.5rem;
+}
+
+.nav-link {
+    color: #cccccc;
+    text-decoration: none;
+    font-weight: 500;
+    transition: color 0.3s ease;
+}
+
+.nav-link:hover {
+    color: #ffffff;
+}
+
+/* Landing section */
+.landing {
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: flex-start; /* Aligns to the left */
+    padding: 0 2rem;
+    background: linear-gradient(135deg, #1e1e1e, #121212);
+}
+
+.landing h1 {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+}
+
+.landing p {
+    font-size: 1.25rem;
+    margin-bottom: 2rem;
+    color: #bbbbbb;
+}
+
+.btn {
+    background-color: #ff9800;
+    color: #121212;
+    padding: 0.75rem 1.5rem;
+    border: none;
+    text-decoration: none;
+    font-weight: bold;
+    border-radius: 4px;
+    transition: background-color 0.3s ease;
+}
+
+.btn:hover {
+    background-color: #e68900;
+}

@@ -5,6 +5,7 @@ class Player:
         self.hand = []
         self.current_bet = 0
         self.folded = False
+        self.committed = 0
 
     def fold(self):
         self.folded = True
@@ -17,12 +18,12 @@ class Player:
 
     def get_card(self, card):
         self.hand.append(card)
-        print(card)
 
     def reset_hand(self):
         self.hand = []
         self.current_bet = 0
         self.folded = False
+        self.committed = 0
 
     def __repr__(self):
         return f"{self.name}: Hand - {self.hand}, Chips - {self.chips}, Folded - {self.folded}"
